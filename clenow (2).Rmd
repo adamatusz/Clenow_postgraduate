@@ -59,7 +59,7 @@ Pobieranie danych ze stooq.com i przekształcenie w format xts. Musimy je zapisy
 _write.zoo()_ ze względu na specyfikę dalszych analiz.
 
 ```{r}
-W20L <- read.csv("f:/R_nauka/etfw20l_pl_d.csv")
+W20L <- read.csv("~path/etfw20l_pl_d.csv")
 # W20L <- select(W20L, -OpenInt) # dla kontraktów terminowych lepiej usunąć, psuje wykresy w "quantmod"
 W20L <- tibble::add_column(W20L, Adjusted = W20L$Close) # to jest format dodawny przez yahoo.com. 
 # W polskich reliach = się cenie "Close"
@@ -67,18 +67,18 @@ head(W20L, 4)
 W20L <- xts(W20L[,-1], order.by = as.Date(W20L[,1]))
 names(W20L) = c("W20L.Open", "W20L.High", "W20L.Low", "W20L.Close", "W20L.Volume", "W20L.Adjusted")
 chartSeries(W20L)
-write.zoo(W20L, file = "f:/R_nauka/W20L.csv", sep = ",")
+write.zoo(W20L, file = "~path/W20L.csv", sep = ",")
 
-DAX <- read.csv("f:/R_nauka/etfdax_pl_d.csv") 
+DAX <- read.csv("~path/etfdax_pl_d.csv") 
 DAX <- tibble::add_column(DAX, Adjusted = DAX$Close) 
 head(DAX, 4)
 tail(DAX, 4)
 DAX <- xts(DAX[,-1], order.by = as.Date(DAX[,1]))
 names(DAX) = c("DAX.Open", "DAX.High", "DAX.Low", "DAX.Close", "DAX.Volume", "DAX.Adjusted")
 chartSeries(DAX)
-write.zoo(DAX, file = "f:/R_nauka/DAX.csv", sep = ",")
+write.zoo(DAX, file = "~path/DAX.csv", sep = ",")
 
-SPY_1 <- read.csv("f:/R_nauka/etfsp500_pl_d.csv") 
+SPY_1 <- read.csv("~path/etfsp500_pl_d.csv") 
 SPY_1 <- tibble::add_column(SPY_1, Adjusted = SPY_1$Close) 
 head(SPY_1, 4)
 tail(SPY_1)
@@ -86,7 +86,7 @@ SPY_1 <- xts(SPY_1[,-1], order.by = as.Date(SPY_1[,1]))
 names(SPY_1) = c("SPY_1.Open", "SPY_1.High", "SPY_1.Low", "SPY_1.Close", "SPY_1.Volume", "SPY_1.Adjusted")
 chartSeries(SPY_1)
 addSMA(200)
-write.zoo(SPY_1, file = "f:/R_nauka/SPY_1.csv", sep = ",")
+write.zoo(SPY_1, file = "~path/SPY_1.csv", sep = ",")
 
 #setDefaults(getSymbols, src = 'csv') # trzeba prze zrodło 'csv'
 ```

@@ -1,0 +1,480 @@
+---
+title: "Analiza techniczna funduszu opartego na ETF notowanych na GPW z wykorzystaniem długoterminowej strategii"
+output:
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+### Pakiety
+ten dokument wymaga poniższych pakietów 
+
+```{r 43_1, echo=TRUE}
+#install.packages('devtools') # jeżeli konieczne
+
+# przed zainstalowaniem "blotter/quantstrat" należy zainstalować
+# obydwa poniższe pakiety
+
+#install.packages('PerformanceAnalytics')
+#install.packages('FinancialInstrument')
+
+# devtools::install_github('braverock/blotter') # jeżeli konieczne
+# devtools::install_github('braverock/quantstrat') # jeżeli konieczne
+
+suppressPackageStartupMessages({
+  library(quantmod)
+  library(FinancialInstrument)
+  library(PerformanceAnalytics)
+  library(foreach)
+  library(blotter)
+  library(quantstrat)
+
+#devtools::install_github('IlyaKipnis/IKTrading')
+  library(IKTrading)
+})
+
+```
+Suppresses warnings
+```{r}
+options("getSymbols.warning4.0" = FALSE)
+```
+
+Ustawienia strefy czasowej oraz waluty
+```{r}
+# czyszczenie procesora z ewentualnych strategii
+
+# rm(list = ls(.blotter), envir = .blotter)
+
+# Ustawienie waluty oraz strefy czasowej
+currency("PLN")
+Sys.setenv(TZ = "UTC")
+```
+
+Pobieranie danych ze stooq.com i przekształcenie w format xts. Musimy je zapisywać na dysku przez funkcję
+_write.zoo()_ ze względu na specyfikę dalszych analiz.
+
+```{r}
+W20L <- read.csv("f:/R_nauka/etfw20l_pl_d.csv")
+# W20L <- select(W20L, -OpenInt) # dla kontraktów terminowych lepiej usunąć, psuje wykresy w "quantmod"
+W20L <- tibble::add_column(W20L, Adjusted = W20L$Close) # to jest format dodawny przez yahoo.com. 
+# W polskich reliach = się cenie "Close"
+head(W20L, 4)
+W20L <- xts(W20L[,-1], order.by = as.Date(W20L[,1]))
+names(W20L) = c("W20L.Open", "W20L.High", "W20L.Low", "W20L.Close", "W20L.Volume", "W20L.Adjusted")
+chartSeries(W20L)
+write.zoo(W20L, file = "f:/R_nauka/W20L.csv", sep = ",")
+
+DAX <- read.csv("f:/R_nauka/etfdax_pl_d.csv") 
+DAX <- tibble::add_column(DAX, Adjusted = DAX$Close) 
+head(DAX, 4)
+tail(DAX, 4)
+DAX <- xts(DAX[,-1], order.by = as.Date(DAX[,1]))
+names(DAX) = c("DAX.Open", "DAX.High", "DAX.Low", "DAX.Close", "DAX.Volume", "DAX.Adjusted")
+chartSeries(DAX)
+write.zoo(DAX, file = "f:/R_nauka/DAX.csv", sep = ",")
+
+SPY_1 <- read.csv("f:/R_nauka/etfsp500_pl_d.csv") 
+SPY_1 <- tibble::add_column(SPY_1, Adjusted = SPY_1$Close) 
+head(SPY_1, 4)
+tail(SPY_1)
+SPY_1 <- xts(SPY_1[,-1], order.by = as.Date(SPY_1[,1]))
+names(SPY_1) = c("SPY_1.Open", "SPY_1.High", "SPY_1.Low", "SPY_1.Close", "SPY_1.Volume", "SPY_1.Adjusted")
+chartSeries(SPY_1)
+addSMA(200)
+write.zoo(SPY_1, file = "f:/R_nauka/SPY_1.csv", sep = ",")
+
+#setDefaults(getSymbols, src = 'csv') # trzeba prze zrodło 'csv'
+```
+
+Określenie aktywów przeznaczonych do analizy
+```{r}
+symbols <- c("DAX", #ETF DAX
+             "SPY_1", #ETF SP500
+             "W20L") #ETF Wig20 Long
+```
+
+ETF z GPW ponowne zaciągnięcie danych już wcześniej przekształconych i zapisanych na dysku
+
+```{r}
+suppressMessages(getSymbols(symbols, from = '2000-01-01', dir = "f:/R_nauka/",
+                            to = Sys.Date(),  src = "csv", adjust = TRUE))
+```
+
+Nadanie nazw, wykorzystywanych w dalszej pracy
+
+```{r}
+stock(symbols, currency = "PLN", multiplier = 1)
+str(W20L)
+str(DAX)
+str(SPY_1)
+```
+
+wykres korelacji logarytmowanych stóp zwrotu oraz tabela korelacji
+
+```{r}
+data<-cbind( diff(log(Cl(DAX))),   diff(log(Cl(W20L))),  diff(log(Cl(SPY_1))))
+data <- na.omit(data)
+names(data) = c("rtnDAX", "rtnW20L", "rtnSPY_1")
+
+#str(data)
+#View(data)
+
+chart.Correlation(data)
+table.cor <- table.Correlation(data$rtnW20L, data)
+knitr::kable(table.cor)
+```
+
+histogramy zlogarytmowanych stóp zwrotu badanych aktywów
+
+```{r}
+chart.Histogram(data$rtnW20L, probability = TRUE, main = "histogram dla stóp zwrotu W20L",
+                methods = c("add.normal", "add.qqplot"))
+chart.Histogram(data$rtnDAX, probability = TRUE, main = "histogram dla stóp zwrotu DAX",
+                methods = c("add.normal", "add.qqplot"))
+chart.Histogram(data$rtnSPY_1, probability = TRUE, main = "histogram dla stóp zwrotu SPY_1",
+                methods = c("add.normal", "add.qqplot"))
+```
+
+modele regresji pomiędzy zlogarytmowanymi stopami zwrotów
+
+```{r}
+library(ggplot2)
+fit_1 <- lm(rtnW20L ~ rtnDAX, data = data)
+summary(fit_1)
+ggplot(data = data, aes( x = as.numeric(rtnDAX), y = as.numeric(rtnW20L))) +
+  geom_point() +
+  geom_abline(intercept = 0.0004, slope = 0.418, colour = "red")
+# ggplot(data = data, aes( x = as.numeric(rtnDAX), y = as.numeric(rtnW20L))) +
+#   geom_point() +
+#   geom_smooth()
+forecast::ggtsdisplay(fit_1$residuals, plot.type = "histogram", lag.max = 24,
+                    main = "Wykres reszt pozostałych z modelu regresji liniowej fit_1") # dopasowanie reszt rtnDAX vs. rtnW20L
+data_lag <- data
+data_lag$rtnW20L_lag1 <- lag(data$rtnW20L)
+data_lag$rtnDAX_lag1 <- lag(data$rtnDAX)
+data_lag$rtnW20L_lag3 <- lag(data$rtnW20L, 3)
+fit_1lag <- lm(rtnW20L ~ rtnDAX + rtnW20L_lag1 + rtnDAX_lag1 + rtnW20L_lag3, data = data_lag)
+summary(fit_1lag)
+
+forecast::ggtsdisplay(fit_1lag$residuals, plot.type = "histogram", lag.max = 24 )
+fit_4 <- lm(rtnDAX ~ rtnSPY_1 , data = data)
+summary(fit_4)
+
+forecast::ggtsdisplay(fit_4$residuals, plot.type = "histogram", lag.max = 24) # dopasowanie reszt rtnDAX vs. rtnSPY_1 
+data_lag$rtnSPY_1_lag1 <- lag(data$rtnSPY_1)
+fit_5 <- lm(rtnDAX ~ rtnSPY_1 + rtnDAX_lag1 + rtnSPY_1_lag1, data = data_lag)
+summary(fit_5)
+forecast::ggtsdisplay(fit_5$residuals, plot.type = "histogram", lag.max = 24)
+```
+
+##strategia podążania za trendem "CLENOW SIMPLE"
+
+Podstawowe parametry: zakres dat, ważne aby _initDate=_ była wczesniej niż _from=_
+```{r}
+initDate = '2010-01-01'
+from = '2011-01-01'
+to = Sys.Date()
+options(width = 70)
+```
+
+wartosc i wielkosc poczatkowej pozycji
+
+```{r}
+tradeSize <- 100000
+initEq <- tradeSize * length(symbols)
+
+strategy.st <- "Clenow_Simple"
+portfolio.st <- "Clenow_Simple"
+account.st <- "Clenow_Simple"
+```
+
+Należy pamietać aby wyczyścić procesor jeżeli może mieć w pamięci poprzednio analizowaną strategię.
+Równocześnie ponownie wprowadzić ponownie środowisko pakietu __blotter__
+
+```{r}
+#rm.strat(portfolio.st)
+#rm.strat(strategy.st)
+#if(!exists(".blotter")) .blotter <<- new.env()
+```
+
+Ustawienie parametrów początkowych
+
+```{r}
+initPortf(portfolio.st, symbols = symbols,
+          initDate = initDate, currency = 'PLN')
+initAcct(account.st, portfolios = portfolio.st,
+         initDate = initDate, currency = 'PLN', initEq = initEq)
+initOrders(portfolio.st, initDate = initDate)
+strategy(strategy.st, store=TRUE)
+```
+
+#  Backtest CLENOW SIMPLE
+
+indykatory
+```{r}
+nLag = 252
+pctATR = 0.02
+period = 10
+
+namedLag <- function(x, k = 1, na.pad = TRUE, ...) { # oblicza wartość łączącą warunki -252dniowe opóźnienie
+                                                     # -utworzy wynik w dodatkowej kolumnie
+  out <- lag(x, k = k, na.pad = na.pad, ...)        
+  out[is.na(out)] <- x[is.na(out)]
+  colnames(out) <- "namedLag"
+  return(out)
+}
+```
+
+Dodawanie wskaźników do strategii
+
+```{r}
+add.indicator(strategy.st, name = "namedLag",
+              arguments = list(x = quote(Cl(mktdata)), k = nLag),
+              label = "ind")
+
+add.indicator(strategy.st, name = "lagATR", # z pakietu IKTrading zwraca wartość opóźnionego ATR(n=period)
+              arguments = list(HLC = quote(HLC(mktdata)), n = period),
+              label = "atrX")
+
+test <- applyIndicators(strategy.st, mktdata = OHLC(W20L))
+head(round(test, 2),6)
+```
+
+dodawanie sygnałów do strategii
+
+```{r}
+add.signal(strategy.st, name = "sigCrossover",
+           arguments = list(columns = c("Close", "namedLag.ind"),
+                            relationship = "gt"),
+           label = "coverOrBuy")
+add.signal(strategy.st, name = "sigCrossover",
+           arguments = list(columns = c("Close", "namedLag.ind"),
+                            relationship = "lt"),
+           label = "sellOrShort")
+```
+
+dodawanie warunków dla pozycji długiej(kupno)
+
+```{r}
+add.rule(strategy.st, name = "ruleSignal",
+         arguments = list(sigcol = "coverOrBuy",
+                          sigval = TRUE, ordertype = "market",
+                          orderside = "long", replace = FALSE,
+                          prefer = "Open", osFUN = osDollarATR,
+                          tradeSize = tradeSize, pctATR = pctATR,
+                          atrMod = "X"), type = "enter", path.dep = TRUE)
+add.rule(strategy.st, name = "ruleSignal",
+         arguments = list(sigcol = "sellOrShort",
+                          sigval = TRUE, orderqty = "all",
+                          ordertype = "market", orderside = "long",
+                          replace = FALSE, prefer = "Open"),
+         type = "exit", path.dep = TRUE)
+
+```
+
+dodawanie warunków dla pozycji krótkiej(sprzedaż)
+
+```{r}
+add.rule(strategy.st, name = "ruleSignal",
+         arguments = list(sigcol = "sellOrShort",
+                          sigval = TRUE, ordertype = "market",
+                          orderside = "short", replace = FALSE,
+                          prefer = "Open", osFUN = osDollarATR,
+                          tradeSize = -tradeSize, pctATR = pctATR,
+                          atrMod = "X"), type = "enter", path.dep = TRUE)
+add.rule(strategy.st, name = "ruleSignal",
+         arguments = list(sigcol = "coverOrBuy",
+                          sigval = TRUE, orderqty = "all",
+                          ordertype = "market", orderside = "short",
+                          replace = FALSE, prefer = "Open"),
+         type = "exit", path.dep = TRUE)
+```
+
+# uruchomienie analizy
+
+```{r}
+t1 <- Sys.time()
+out <- applyStrategy(strategy = strategy.st,
+                     portfolios = portfolio.st)
+```
+
+Czas obliczeń. Przy rozbudowanym portfelu może trwać kilkanaście minut
+
+```{r}
+t2 <- Sys.time()
+print(t2 - t1)
+```
+
+Ocena wydajności strategii
+
+```{r}
+updatePortf(portfolio.st)
+dateRange <- time(getPortfolio(portfolio.st)$summary)[-1]
+updateAcct(portfolio.st, dateRange)
+updateEndEq(account.st)
+
+tStats <- tradeStats(Portfolios = portfolio.st, use = "trades",
+                     inclZeroDays = FALSE)
+tStats[, 4:ncol(tStats)] <- round(tStats[, 4:ncol(tStats)], 2)
+
+knitr::kable(data.frame(t(tStats[,-c(1,2)])))
+aggPF <- sum(tStats$Gross.Profits) / -sum(tStats$Gross.Losses)
+aggCorrect <- mean(tStats$Percent.Positive)
+numTrades <- sum(tStats$Num.Trades)
+meanAvgWLR <- mean(tStats$Avg.WinLoss.Ratio[tStats$Avg.WinLoss.Ratio < Inf], na.rm = TRUE)
+aggEnd.Equity <- sum(tStats$End.Equity) + 100000
+
+table_1 <- data.frame(Items = c("współczynnik zysku/straty ", "średnia z zyskownych",
+                                "ilość transakcji", "średnia wartość zysk/strata",
+                                "wartość końcowa portfela"),
+                      Features = c(aggPF, aggCorrect, numTrades,
+                                   meanAvgWLR, aggEnd.Equity))
+knitr::kable(table_1, digits = 2)
+```
+
+Uśrednianie stopy zwroru z aktywów portfela oraz konwertowanie na format _xts_
+
+```{r}
+instRets <- PortfReturns(account.st)
+portfRets <- xts(rowMeans(instRets) * ncol(instRets),
+                 order.by = index(instRets))
+portfRets <- portfRets[!is.na(portfRets)]
+```
+
+Skumulowana stopa zwrotu oraz okreslenie pierwszego dnia, w którym wartość > 0 w celu porównania w dalszych analizach
+z wykresem odniesienia
+
+```{r}
+cumPortfRets <- cumprod(1 + portfRets)
+firstNonZeroDay <- as.character(index(portfRets)[
+  min(which(portfRets != 0))])
+```
+
+wykresy zlogarytmowanych stóp zwrotu portfela: histogram, wykres reszt, autokorelacji
+
+```{r}
+forecast::ggtsdisplay(portfRets, plot.type = "histogram", lag.max = 24)
+chart.QQPlot(portfRets, distribution = "norm")
+acf(portfRets^2, main = "")
+```
+
+#Model GARCH
+
+Dopasowania modelu
+```{r}
+library(fGarch)
+
+fit_4 <- garchFit(~ 1 + garch(1 , 1), data = portfRets, trace = FALSE) #dla rozkładu normalnego
+summary(fit_4)
+fit_5 <- garchFit(~ 1 + garch(1, 1), data= portfRets, trace= FALSE, cond.dist="std") # dla warunku rozkładu t-studenta
+summary(fit_5)
+fit_6 <- garchFit(~ 1 + garch(1 , 0), 
+                  data = portfRets, trace = FALSE, cond.dist = "sstd") # dla warunku rozkładu skośnego t-studenta
+summary(fit_6)
+```
+
+Wykres reszt po uwzględnieniu poprawki wynikającej z z uwzględnienia warunku t-studenta
+
+```{r}
+chart.QQPlot(portfRets, distribution = "std", main ="")
+```
+
+Zmienność dla modelu(fit_5) uwzględniającego poprawkę wynikającą z warunku t-studenta modelu GARCH(1,1)
+
+```{r}
+vol_5 <- volatility(fit_5) #zmienność dla modelu fit_5
+res_fit_5 <- residuals(fit_5, standardize = TRUE) #standaryzowanie reszt
+vol <- ts(vol_5, frequency = 252, start = c(2011, 10))
+res <- ts(res_fit_5, frequency = 252, start = c(2011, 10))
+```
+
+Wykres zmienności zlogarytmowanych stóp zwrotu w badanym przedziale czasowym
+
+```{r}
+plot(vol, xlab = "rok", ylab = "zmienność", type = "l")
+```
+
+wykres zestandaryzowanych reszt po uwzględnieniu warunku t-studenta modelu GARCH(1,1)
+
+```{r}
+plot(res, xlab = "rok", ylab = "standaryzowane.reszty", type = "l", ylim = c(-6, 6))
+```
+
+Predykcja ze zmiennością w tle jako przedział zaufania w 95%
+
+```{r}
+upp <- 1.672e-09 + 2 * vol_5
+low <- 1.672e-09 - 2 * vol_5
+tdx <- c(1:2385)
+plot(tdx, portfRets, xlab = "liczba sesji", ylab = "series", type ="l", ylim = c(-0.15, 0.15))
+lines(tdx, upp, lty = 2, col = "red")
+lines(tdx, low, lty = 2, col = "red")
+abline(h = c(1.672e-09), col = "blue")
+```
+
+#Pobieranie danych S&P500 ze strony www.yahoo.com
+
+```{r}
+getSymbols("SPY", from = firstNonZeroDay, to = to)
+```
+
+zlogarytmowanie oraz zmiana na format _xts_, zlogarytmowanie i przeliczenie na skumulowaną stopę zwrotu
+
+```{r}
+SPYrets <- diff(log(Cl(SPY)))[-1]
+cumSPYrets <- cumprod(1 + SPYrets)
+```
+
+Połączenie protfela wraz z porównywanymi danymi _cumSPYrets_
+
+```{r}
+comparison <- cbind(cumPortfRets, cumSPYrets)
+colnames(comparison)  <- c("strategy", "SPY")
+```
+
+Wykres porównania strategii oraz S&P500
+
+```{r}
+chart.TimeSeries(na.omit(comparison), legend.loc = "topleft",
+                 element.color =c("green", "red"))
+```
+
+Podsumowanie portfela
+
+```{r}
+SharpeRatio.annualized(portfRets)
+Return.annualized(portfRets)
+maxDrawdown(portfRets)
+
+table_3 <- data.frame(Items = c("Wskaźnik Sharpe annualizowany", "Roczna stopa annualizowana", "maxSpadek kapitału"),
+                      Features = c(SharpeRatio.annualized(portfRets) * 100, Return.annualized(portfRets) * 100, maxDrawdown(portfRets) *100))
+knitr::kable(table_3, digits = 2)
+```
+
+#Wykres dla ETF_DAX 
+
+```{r}
+chart.Posn(portfolio.st, "DAX")
+tmp <- namedLag(Cl(DAX), k = nLag)
+add_TA(tmp$namedLag, col = "blue", on = 1)
+```
+
+#Wykres dla ETF_WIG20
+
+```{r}
+chart.Posn(portfolio.st, "W20L")
+tmp <- namedLag(Cl(W20L), k = nLag)
+add_TA(tmp$namedLag, col = "blue", on = 1)
+```
+#Wykres dla ETF_S&P500
+
+```{r}
+chart.Posn(portfolio.st, "SPY_1")
+tmp <- namedLag(Cl(SPY_1), k = nLag)
+add_TA(tmp$namedLag, col = "blue", on = 1)
+```

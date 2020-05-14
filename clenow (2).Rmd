@@ -57,7 +57,8 @@ Sys.setenv(TZ = "UTC")
 
 Pobieranie danych ze stooq.com i przekształcenie w format xts. Musimy je zapisywać na dysku przez funkcję
 _write.zoo()_ ze względu na specyfikę dalszych analiz.
-
+Dane użyte w tej pracy po przekształceniu są dostępne https://www.kaggle.com/adamatusz1/data-to-postgraduate-study
+Data used in this work after transformation is available https://www.kaggle.com/adamatusz1/data-to-postgraduate-study
 ```{r}
 W20L <- read.csv("f:/R_nauka/etfw20l_pl_d.csv")
 # W20L <- select(W20L, -OpenInt) # dla kontraktów terminowych lepiej usunąć, psuje wykresy w "quantmod"

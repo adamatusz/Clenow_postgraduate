@@ -1,0 +1,491 @@
+---
+title: "Analiza i prognozowanie szeregów czasowych- projekt zaliczeniowy MSAD 2018/19"
+author: "Adam Matuszczyk"
+date: "2 07 2019"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+__Celem niniejszej pracy jest ocena skutków wprowadzenia reformy, która zaczęła obowiązywać w styczniu 2012, w__ __efekcie działań reformy otrzymaliśmy niższe poziomy refundacji, ale niestety pojawił się problem wywozu__
+__dużej grupy leków za granicę na terenie UE, ale również poza strefę unii celnej. W pracy wykorzystałem dane__ __sprzedażowe pewnego produktu, który w efekcie wprowadzenia w życie reformy został wykreślony z listy i__ __powrócił na nią w marcu 2012__
+
+__W pracy wykorzystałem materiały z zajęć prowadzonych przez dra Tomasza Wójtowicza w ramach MSAD  2018/2019,__
+__a także publikację Adam Zagdański, Artur Suchwałko "Analiza i prognozowanie szeregów czasowych" oraz Jared P.__
+__Lander "R dla każdego"__
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,	warning = FALSE)
+```
+
+
+```{r library}
+library("tidyverse")
+library("lubridate")
+library("skimr")
+library("data.table")
+library("forecast")
+library("lattice")
+```
+
+```{r dane}
+dane <- read.table("d:/AGH/Analiza i Prognozowanie Szeregów Czasowych/testy.csv", sep= ";", header = TRUE)
+#dane  %>% skim()
+```
+
+```{r klasa_Date}
+dane %>% mutate(Date = ymd(Data, truncated =1)) %>%  #ustawienie klasy "date"
+select(-Data) -> dane
+```
+
+__Wykres sprzedaży za lata 2018-2017 analizowanego produktu__
+
+```{r ilość_vs_reforma}
+dane %>%
+  ggplot(aes(Date, ilość)) +
+  geom_line() +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
+  geom_vline(xintercept = ymd("2012-01-01"), col = "red") + 
+  geom_text(aes(x = dane$Date[73], y = dane$ilość[47], label = "Nowe prawo farmaceutyczne"), color = "blue", size = 4) + 
+  labs(title = "wykres sprzedaży wraz z zaznaczeniem wejścia w życie prawa farmacetycznego") +
+  theme(plot.title=element_text(size=12))
+```
+
+
+```{r}
+dane %>% mutate(Month = as.factor(month(Date)), Year = year(Date)) ->dane
+head(dane) %>%  kable()
+```
+
+
+__Skladniki szeregu, dekompozycja__
+
+
+__zastosowane "kody" kolorów pochodzą ze strony:__
+
+http://tools.medialab.sciences-po.fr/iwanthue/
+ 
+```{r kolory}
+cols <- c("#eb1100","#8dce2e","#7d2aa0","#c4a200","#0158c6","#c66a00","#1bfeff","#581216","#02ce9a","#e11a99",
+          "#ff6b69","#cd96ff")
+
+```
+
+```{r rok_ilość_miesiąc}
+dane %>% 
+  ggplot(aes(Year, ilość, col = Month)) +
+  geom_line() +
+  scale_color_manual(values = cols) +
+  labs(title = "sezonowość za lata 2008-2016") +
+  theme(plot.title=element_text(size=12))
+
+
+
+dane %>% 
+  ggplot(aes(as.numeric(Month), ilość, col = as.factor(Year))) +
+  geom_line(show.legend = TRUE) +
+  scale_color_manual(values = cols) +
+  scale_x_continuous(breaks = 1:12) +
+  labs(title = "miesięczne zmiany w kolejnych latach 2008-2016") +
+  theme(plot.title=element_text(size=12))
+```
+
+__Jak widać wykresy są nieprzejrzyste, ze względu na wejście reformy w życie, rok 2011 jest zaburzony przez__ __napompowanie rynku przez koncern co uwydatniło się w ostatnich trzech miesiącach. Początek 2012 również ze względu na__ __usunięcie z listy i powrót w kolejnej publikacji odstaje od reszty. Postanowiłem wprowadzić filtry do analizy aby w__ __dalszej pracy uzyskać czytelną formę.__
+
+```{r rozbicie_czasowe}
+#wprowadzenie filtrów "Before", "Before2", "After"
+
+dane %>% mutate(Before = Date < "2011-11-01",
+         Before2 = Date < "2011-11-01" & Date >= "2009-01-01", After = Date > "2012-03-01") -> dane
+tail(dane) %>% kable()
+```
+
+__W pierwszej części pracy będę korzystał z filtrów "Before" oraz "Before2"__
+
+```{r miesiąc_ilość_rok}
+dane %>% 
+  filter(Before) %>% 
+  ggplot(aes(Year, ilość, col = Month)) +
+  geom_line() +
+  scale_color_manual(values = cols)  +
+  labs(title = "porównania miesięczne latach 2008-2011") +
+  theme(plot.title=element_text(size=12))
+
+
+dane %>% 
+  filter(Before) %>% 
+  ggplot(aes(as.numeric(Month), ilość, col = as.factor(Year))) +
+  geom_line(show.legend = TRUE) +
+  scale_color_manual(values = cols) +
+  scale_x_continuous(breaks = 1:12)  +
+  labs(title = "porównanie lat w kolejnych miesiącach w latach 2008-2011") +
+  theme(plot.title=element_text(size=12))
+
+dane %>% 
+  filter(Before2) %>% 
+  ggplot(aes(as.numeric(Month), ilość, col = as.factor(Year))) +
+  geom_line(show.legend = TRUE) +
+  scale_color_manual(values = cols) +
+  scale_x_continuous(breaks = 1:12) +
+  labs(title = "porównanie lat w kolejnych miesiącach w latach 2009-2011") +
+  theme(plot.title=element_text(size=12))
+```
+
+__Wykresy stały się bardziej czytelne, widać na nich sezonowość oraz trend wzrostowy w kolejnych latach. Niestety ze__ __względu na zakłocenie sezonowości przez rok 2008, postanowiłem do dalszej analizy wykorzystać obydwa filtry.__
+
+```{r rok_suma_ilość}
+dane%>% 
+  group_by(Year) %>% 
+  summarise(ilość_rocznie = sum(ilość)) %>% 
+  ggplot(aes(Year, ilość_rocznie))+
+  geom_line() + 
+  labs(title = "wykres trendu z okresu 2008-01 do 2016-12")
+
+dane %>% 
+  filter(Year < 2012) %>% 
+  group_by(Year) %>% 
+  summarise(ilość_rocznie = sum(ilość)) %>% 
+  ggplot(aes(Year, ilość_rocznie)) +
+  geom_line() + 
+  labs(title = "wykres trendu z okresu < 2012-01") 
+```
+
+__Na dwóch wykresach widać trend wzrostowy na przeszczeni lat. Jak również widać, że należy traktować wykresy jako dwa__ __nie do końca zależne od siebie__
+
+```{r średnia_miesięczna}
+dane %>% 
+  group_by(Month) %>% 
+  summarise(Mean = mean(ilość)) %>% 
+  ggplot(aes(as.numeric(Month), Mean)) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:12) + 
+  labs(title = "średnie miesięczne z okresu 2008-01 do 2016-12")
+
+dane %>% 
+  filter(Before) %>% 
+  group_by(Month) %>% 
+  summarise(Mean = mean(ilość)) %>% 
+  ggplot(aes(as.numeric(Month), Mean)) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:12) + 
+  labs(title = "średnie miesięczne z okresu < 2011-11-01")
+```
+
+__Potwierdzenie sezonowości łącznej oraz z filtrem "Before". Widać, że marzec i sierpień są charakterystyczne.__ __Sprzedaż w pierwszym kwartale roku wzrasta później spada i w okresie wakacyjnym osiąga minimum. W kolejnych__
+__miesiącach wzrasta z zatrzymaniem grudniowym co pewnie jest związane ze stosunkowo krótkim okresem handlowym w Polsce__
+
+
+
+_###########Regresja############_
+
+```{r modele_liniowe}
+dane %>% mutate(Time = row_number()) -> dane # dodanie kolumy czas(lp)
+model <- lm(ilość ~ Time + Month, filter(dane, Before))
+summary(model)
+
+dane$Sierpien <- as.numeric(dane$Month == 8)
+model2 <- lm(ilość ~ Time + Sierpien, filter(dane, Before))
+summary(model2)
+
+model3 <- lm(ilość ~ Time + Month, filter(dane, Before2)) #główny
+summary(model3)
+```
+
+__W "model1" zastosowałem najprostsze rozwiązanie i usunąłem trend wraz z sezonowością. Uzyskałem 74% dopasowanie__ __modelu. "model2" jest pozbawiony siepnia ze względu na wysoką zależnoś z poprzednich obliczeń, niestety spadło__ __dopasowanie. W ostatnich obliczeniach wyeliminowałe rok 2008 co poprawiło dopasowanie (87%), ale niestety__ __zmniejszyłem ilość danych. Pomimo tego postanowiłem do predykcji zastosować "model3"__
+
+
+```{r Predykcja}
+dane$Prediction <- predict(model3, dane)#dodanie kolumny Predykcja(Prediction)
+ggplot(dane) + 
+  geom_line(aes(Date, ilość)) +
+  geom_line(aes(Date, Prediction), col = "red", linetype = "longdash")  + 
+  labs(title = "sprzedaż 2008-2016 z naniesioną predykcją")
+```
+
+```{r podsumowanie_modelu}
+dane %>% mutate(Diff = Prediction - ilość) -> dane # dodanie kolumny Diff(różnica= Predykcja-ilość)
+dane %>%
+  ggplot(aes(Date, Diff)) +
+  geom_line() + 
+  labs(title = "podsumowanie modelu: Diff = Prediction - ilość ")
+dane %>% filter(!Before) %>% summarise(1 - sum(ilość) / sum(Prediction))  %>% kable()
+```
+
+
+__Z zastossowania "model3" wynika, że całościowa sprzedaż spadła o ok. 29% lub można po przeliczeniu refundacji chwalić__ __się oszczędnościami dla budżetu państwa__
+
+_###########Autokorelacja############_
+
+```{r autokorelacja_before}
+dane_before <- filter(dane, Before)# wyeliminować I rzędu i II jest znacznie mniej istotna
+acf(dane_before$ilość)
+pacf(dane_before$ilość)
+pacf(dane_before$ilość, plot = FALSE)
+```
+
+```{r autokorelacja_before2}
+dane_before2 <- filter(dane, Before2)# wyeliminować I rzędu i II jest znacznie mniej istotna
+acf(dane_before2$ilość)
+pacf(dane_before2$ilość)
+pacf(dane_before2$ilość, plot = FALSE)
+```
+
+__Usunięcie trendu__
+
+```{r detrend_before}
+dane_before$ilość_detrend <- lm(ilość ~ Time, dane_before) %>% resid()
+ggplot(dane_before, aes(Date, ilość_detrend)) + geom_line()
+Acf(dane_before$ilość_detrend)
+Pacf(dane_before$ilość_detrend)# wykresy sugerują dominujący wpływ trendu, nawet do pominięcia okresowości
+Pacf(dane_before$ilość_detrend, plot = FALSE)
+```
+
+__Niestety po usunięciu trendu okazało się, że znikły najważniejsze zależności. Życie weryfikuje zapędy udoskonalania__
+__wykresów stąd należałoby zamknąć dalszą analizę__
+
+__usuniecie sezonowosci__
+
+```{r}
+#dane_before$ilość_detrend_deseason <- lm(ilość ~ Time + Month, dane_before) %>% resid()
+#ggplot(dane_before, aes(Date, ilość_detrend_deseason)) + geom_line()
+#acf(dane_before$ilość_detrend_deseason)
+#pacf(dane_before$ilość_detrend_deseason)
+#pacf(dane_before$ilość_detrend_deseason, plot= FALSE)
+```
+
+__Autoregresja__
+
+_usunięcie trendu rzedu 1_
+
+```{r usuniecie_autokorelacji_rzedu 1}
+#@dane_before$ilość_lag1 <- lag(dane_before$ilość, n = 1)
+#model4 <- lm(ilość ~ Time + Month + ilość_lag1 , dane_before)
+#summary(model4)
+
+#dane_before$ilość_detrend_deseason_decorr <- c(NA, resid(model4))
+#ggplot(dane_before, aes(Date, ilość_detrend_deseason_decorr)) + geom_line()
+#acf(dane_before$ilość_detrend_deseason_decorr[-1])
+#pacf(dane_before$ilość_detrend_deseason_decorr[-1])
+```
+
+
+__Predykcja dla AR(model4)__
+
+```{r}
+#set.seed(3)
+#pred <- predict(model4, dane_before)
+#dane %>% 
+#  mutate(Prediction4 = ifelse(Before, pred, NA),
+#         ilość_lag1 = lag(ilość, n = 1)) -> dane
+  
+#start <- which(dane$Date == "2011-01-01")
+#end <- nrow(dane)
+#for (i in start:end) {
+#  pred <- predict(model4, newdata = slice(dane, i))
+#  dane$Prediction4[i] <- pred
+#  if (i < end) dane$ilość_lag1[i + 1] <- pred
+#}
+
+#ggplot(dane) + 
+#  geom_line(aes(Date, ilość)) +
+#  geom_line(aes(Date, Prediction4), col = "red", linetype = "longdash")
+#dane %>% mutate(Diff4 = Prediction4 - ilość) -> dane
+#dane %>% filter(!Before) %>% summarise(1 - sum(ilość) / sum(Prediction4)) %>% kable()
+
+```
+
+```{r model_5}
+#model5 <- lm(ilość ~ Time + Month, filter(dane, After))
+#summary(model5)
+
+#dane$Prediction5 <- predict(model5, dane)#dodanie kolumny Predykcja(Prediction)
+#ggplot(dane) + 
+#  geom_line(aes(Date, ilość)) + 
+#  geom_line(aes(Date, Prediction), col = "red", linetype = "longdash")+
+# geom_line(aes(Date, Prediction5), col = "blue", linetype = "longdash")
+```
+
+__Analiza wykresu po reformie__
+
+__Postanowiłem sprawdzić przy pomocy dostępnych danych po wejściu w życie reformy czy jest możliwe i kiedy sprzedaż__ __miałaby szansę zrównać się z danymi uzyskanymi przy pomocy prdykcji "model3"__
+
+```{r po_reformie}
+dane2012 <- dane[which(dane$Year >= 2012),] %>% filter(After)
+head(dane2012)
+```
+
+```{r ilość_od_03_2012}
+dane2012 %>%
+  ggplot(aes(Date, ilość)) +
+  geom_line() +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") + 
+  labs(title = "Sprzedaż w latach 2012-2016 ")
+```
+```{r}
+dane2012 %>% 
+  ggplot(aes(Year, ilość, col = Month)) +
+  geom_line() +
+  scale_color_manual(values = cols)
+
+
+
+dane2012 %>% 
+  ggplot(aes(as.numeric(Month), ilość, col = as.factor(Year))) +
+  geom_line(show.legend = TRUE) +
+  scale_color_manual(values = cols) +
+  scale_x_continuous(breaks = 1:12)
+```
+ 
+```{r volume.ts2}
+volume.ts2 <- ts(dane2012$ilość, start= c(2012,4), frequency= 12)
+ggmonthplot(volume.ts2)
+boxplot(volume.ts2 ~ cycle(volume.ts2))
+```
+
+__Dzieki funkcji "monthplot" potwierdziłem informację o wzroście sprzedaży w kolejnych miesiącach na__ __przestrzeni kolejnych lat, a także widać sezonowość  związaną ze wzrostem sprzedaży w marcu oraz spadkiem w__ __miesiącu wakacyjnym sierpniu i ponownym wzroście w miesiącach jesienno_zimowych__
+
+
+```{r}
+Acf(volume.ts2)
+Pacf(volume.ts2)
+```
+
+__Wykresy "Acf" oraz "Pacf" wyraźnie pokazują wystepowanie zależności pierwszego i drugiego rzędu oraz korelacji__ __trendowej.Sczególnie widać to w "Acf" gdzie rząd 12 jest skorelowany dodatnio__
+
+
+_###########Dekompozycja############_
+
+
+
+```{r}
+#dekompozycja <- decompose(ts2)
+model.tslm2 <- tslm(volume.ts2 ~ trend + season)
+summary(model.tslm2)
+```
+
+```{r}
+Acf(residuals(model.tslm2))
+Box.test(residuals(model.tslm2), type = "Ljung-Box", lag = 20)
+```
+
+__Po dekompozycji z uzyciem regresji znikły zależności, a test Ljung-Boxa pozwala przyjąc hipotezę o losowości resz__
+
+__Przeanalizuję jeszcze same reszty pod kątem korelcji związanej z okresowością__
+
+```{r volume_ts2_lag_plot}
+lag.plot(volume.ts2, lags = 12, do.lines = FALSE, main = "szereg po marzec.2012-wykres lag.plot" )
+```
+
+__Po wykresach widać, ze największa zależność występuje w 12rzędzie co jest związane z roczną powtarzającą się krotnością__
+__W pewnym zakresie widać zależność również w pierwszym i drugim rzędzie__
+
+__Usunę z modelu trend i sezonowość. Ponownie przeanalizuję wykresy reszt__
+
+```{r deseason_detrend}
+volume.ts2.reszty <- decompose(volume.ts2)$random
+plot(volume.ts2.reszty, main= "Szereg volume.ts2 po usunięciu trendu i sezonowości")
+```
+```{r rezty_volume_ts2_detrend_deseason}
+volume.ts2.reszty <- na.omit(volume.ts2.reszty)
+lag.plot(volume.ts2.reszty, lags = 12, do.lines = FALSE, main = "szereg po marzec.2012-po usnięciu trendu i sezonowości" )
+```
+ 
+__Nie widać juz tak silnych zależności czasowych jak w przypadku danych wyjściowych__
+ 
+```{r acf_pacf_reszty}
+par(mfrow = c(2,1))
+Acf(volume.ts2.reszty, lag.max = 36)
+Pacf(volume.ts2.reszty, lag.max = 36)
+```
+ 
+__Wykresy autokorelacji potwierdzają, że zależności zotały w duzym zakresie wyeliminowane__
+
+_###########Wygładzanie przy pomocy sredniej ruchomej############_
+ 
+```{r średnia_ruchoma}
+ma4 <- ma(volume.ts2, order = 3)
+ma6 <- ma(volume.ts2, order = 6)
+head(ma4)
+head(ma6)
+```
+
+__usuwam NA z szeregów__
+
+```{r NA_na.omit}
+ma4_noNA <- na.omit(ma4)
+ma6_noNA <- na.omit(ma6)
+
+
+plot(ma4_noNA, main = paste("metoda średniej ruchomej \n", "(szereg 'volume.ts2')"), col = "blue", lty = 2)
+     lines(ma6_noNA, col = "red", lty = 2)
+     lines(volume.ts2, col = "black", lty = 1)
+     grid()
+     legend("bottomright",
+            legend = c("wyjściowy szereg",
+                       "ruchoma średnia m4",
+                       "ruchoma średnia m6"),
+            col = c("black", "blue", "red"),
+            lty = c(1, 2, 2, 2))
+```
+
+__Najbardziej dopasowane wygładzenie do analizowanych danych jest wygładzenie rzędu q=3. Wyższe rzędy wydają się__
+__być niedokładne__
+
+
+_###########Dekompozycja addytywna############_
+
+__Wykres wykazuje cechy addytywne, dlatego sprawdzę równieź tę dekompozyzycję przy pomocy funkcji "decompose" z pakietu__ __"stats"__
+
+```{r dekompozycja_addytywna}
+volume.ts2.dekomp.add <- decompose(volume.ts2, type = "additive")
+plot(volume.ts2.dekomp.add)
+```
+
+__Również został potwierdzony trend długoterminowy oraz sezonowość__
+
+```{r wydobywanie_składowych}
+volume.ts2.dekomp.add.trend <- volume.ts2.dekomp.add$trend
+volume.ts2.dekomp.add.sezonowość <- volume.ts2.dekomp.add$seasonal
+volume.ts2.dekomp.add.ind.sezon <- volume.ts2.dekomp.add$figure
+volume.ts2.dekomp.add.reszty <- volume.ts2.dekomp.add$random
+
+#wykres współczynników sezonowych
+
+barplot(volume.ts2.dekomp.add.ind.sezon, names.arg = month.abb, main = "indeksy sezonowe")
+
+#wykresy reszt
+
+tsdisplay(volume.ts2.dekomp.add.reszty, main = "losowe fluktuacje")
+
+```
+
+__Potwierdzone zostały dzięki "indeksom sezonowym" wzrosty w miesiącach jesienno zimowych oraz wyraźne zanikanie__ __sprzedaż w okresach letnich. Jak wcześniej widzimy wystepującą korelację rzędu 12 wynikającą z trendu__
+
+
+_###########Prognozy############_
+
+__Na koniec przedstawię dwie prognozy z wykorzystaniem metody "bładzenia losowego z dryfem" oraz__ __"wygładzonej_średniej_expotencjalnej"__
+
+```{r błądzenie_losowe_z_dryfem}
+volume.ts2.forecast.rwf <- rwf(x = volume.ts2, drift = TRUE, h=12)
+plot(volume.ts2.forecast.rwf, main = "volume.ts2:błądzenie losowe z dryfem")
+```
+
+```{r proste_wygładzenie_wykładnicze}
+volume.ts2_ses <- ses(volume.ts2, h=12, level=c(80,95), fan=FALSE, alpha=0.2)
+#summary(volume.ts2_ses)
+```
+```{r wykres_wygładzenie_wykładnicze}
+volume.ts2_ses_null <- ses(volume.ts2, h=10, level=c(80,95), fan=FALSE, alpha=NULL) 
+plot(volume.ts2) 
+lines(volume.ts2_ses$fitted,col="blue")
+lines(volume.ts2_ses_null$fitted, col="red")
+
+legend("topleft",legend=c("dane","SES","SES_null"),col=c("black","blue","red"),lty=c(1,1,1))
+```
+
+```{r prognoza_wg._wygładzonej_średniej_expotencjalnej}
+plot(volume.ts2_ses)
+```
+ 
+ __Niestety dość

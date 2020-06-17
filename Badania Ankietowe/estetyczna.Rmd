@@ -1,0 +1,24 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+#"https://docs.google.com/spreadsheets/d/e/2PACX-1vREdRbsoJnbvaHlr8C5Yu8cBQ8ipTQR5SShqYJjC1rHviB0upOqBmn7O0rZLw7iM3oj5irrDJ7iPIRQ/pub?gid=768857637&single=true&output=csv#
+
+```{r}
+library("tidyverse")
+library("skimr")
+library("descr")
+
+estetyczna_url <- "https://docs.google.com/spreadsheets/d/e/2PACX-1vREdRbsoJnbvaHlr8C5Yu8cBQ8ipTQR5SShqYJjC1rHviB0upOqBmn7O0rZLw7iM3oj5irrDJ7iPIRQ/pub?gid=768857637&single=true&output=csv"
+data <- read.csv(url(estetyczna_url))
+
+data <- data %>% mutate_if(is.character, as.factor)
+names(data) <- str_sub(names(data), 1, 3)
+# -> alt -
+# %>% ctrl shift m
+skim(data)
+
+crosstab(data$X1A, data$X15, prop.r = TRUE)
+chisq.test(data$X1A, data$X15)
+```

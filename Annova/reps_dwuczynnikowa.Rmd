@@ -1,0 +1,80 @@
+---
+#title: "Anova Sprzedaż w czasie i terenie Adam Matuszczyk"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,	message = FALSE, warning = FALSE)
+```
+
+
+```{r library}
+library(tidyverse)
+library(lubridate)
+library(reshape2)
+library(graphics)
+library(gplots)
+library(nortest)
+library(lattice)
+library(skimr)
+```
+
+
+
+```{r data, echo=TRUE}
+#https://docs.google.com/spreadsheets/d/e/2PACX-1vS16A2lcUKaVem5fW21_Jah4ZoSGMFmb9FFVPh5VMpqxuaNYV2qOT9lnPYMi-ZrLaLxztHrijGO4db1/pub?gid=1299943662&single=true&output=csv
+moj_url <- "https://docs.google.com/spreadsheets/d/e/2PACX-1vTbOkma4SkS38S4vpMX0bGCung32QNSyHhmyrfOVn1-FuacQYV6ADwW1llm3lBqFOisTgZUPhM18q2M/pub?gid=1903822578&single=true&output=csv"
+dane  <- read.delim(url(moj_url), header =TRUE, stringsAsFactors = FALSE, sep = ";")
+colnames(dane) = c("region", "zima", "wiosna", "lato","jesień")
+```
+```{r porządkowanie danych}
+dane.mieszane <-  melt(dane, id= "region")
+colnames(dane.mieszane) = c("Region", "Czas", "Sprzedaż") 
+dane.mieszane <- dane.mieszane %>% mutate_if(is.character, as.factor) %>% glimpse()
+head(dane.mieszane)
+```
+
+```{r wykresy}
+histogram(dane.mieszane$Sprzedaż)
+ggplot(dane.mieszane, aes(Sprzedaż)) + geom_density() + scale_x_log10()
+#zima(styczeń, luty, marzec); wiosna(kwiecień, maj, czerwiec)
+#lato(lipiec, sierpień, wrzesień); jesień(listopad, październik, grudzień) 
+ggplot(dane.mieszane, aes(Czas, log10(Sprzedaż))) + geom_boxplot()
+ggplot(dane.mieszane, aes(Sprzedaż, fill = Czas )) + geom_density(alpha = 0.5) + scale_x_log10()
+#C_G (kujawsko-pomorskie, pomorskie); D_F(dolnośląskie_lubuskie); E_T(łódzkie, świętokrzyskie)
+#K_R(małopolskie, podkarpackie); N_B_L(warmińsko-mazurskie, podlaskie, lubelskie)
+#P_Z(wielkopolskie_zachodniopomorskie); S_O(śląskie, opolskie); W(mazowieckie)
+ggplot(dane.mieszane, aes(Region,log10(Sprzedaż))) + geom_boxplot()
+ggplot(dane.mieszane, aes(Sprzedaż, fill = Region)) + geom_density(alpha = 0.5) + scale_x_log10()
+```
+```{r Shapiro-Francia test normalności rozkładu}
+tapply(dane.mieszane$Sprzedaż, dane.mieszane$Region, shapiro.test)
+tapply(dane.mieszane$Sprzedaż, dane.mieszane$Czas, shapiro.test)
+
+kruskal.test(dane.mieszane$Sprzedaż ~dane.mieszane$Czas)
+kruskal.test(dane.mieszane$Sprzedaż ~dane.mieszane$Region)
+```
+
+```{r Bartlett Test jednorodności wariancji}
+bartlett.test(dane.mieszane$Sprzedaż ~ dane.mieszane$Czas)
+bartlett.test(dane.mieszane$Sprzedaż ~ dane.mieszane$Region)
+```
+```{r test na interakcje}
+interaction.plot(dane.mieszane$Region,dane.mieszane$Czas, dane.mieszane$Sprzedaż, ylim = c(100000,400000),
+                 ylab = "Sprzedaż", xlab = "Region", lwd = 2, trace.label = "Czas", col = 1 : 4)
+
+interaction.plot(dane.mieszane$Czas,dane.mieszane$Region, dane.mieszane$Sprzedaż, ylim = c(100000,400000),
+                 ylab = "Sprzedaż", xlab = "Czas" ,lwd = 2, trace.label = "Region", col = 1 : 8)
+```
+```{r ANOVA dwuczynnikowa}
+dwuczynnikowa <- aov(Sprzedaż ~ Czas + Region, data = dane.mieszane)
+summary(dwuczynnikowa)
+```
+```{r post hoc TukeyHSD}
+post_dwuczynnikowa <- TukeyHSD(dwuczynnikowa, which = c("Czas", "Region"))
+post_dwuczynnikowa
+```
+

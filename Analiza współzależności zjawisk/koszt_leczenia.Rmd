@@ -1,0 +1,397 @@
+---
+title: "Adam Matuszczyk MSAD 2018/2019"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+
+```{r warning = FALSE, message = FALSE}
+library("tidyverse")
+library("skimr")
+library("mosaic") # favstats
+library("car")
+library("data.table")
+library("psych")
+d <- read_csv("d:/AGH/Analiza Współzależności Zjawisk/insurance/insurance.csv")
+d <- d %>% 
+  mutate_if(is.character, as.factor)
+#summary(d)# %>% data.frame %>% kable()
+#skim(d)
+```
+
+# Rozkłady zmiennych
+
+```{r}
+d %>% count(region) %>% kable()
+d %>% count(sex) %>% kable()
+d %>% count(smoker) %>% kable()
+ggplot(d, aes(charges)) + geom_histogram() + labs(title = "Rozkład zmiennej charges", subtitle = "rozkład prawostronnie skośny")+theme(plot.subtitle = element_text(size = 10, face = "italic", color = "black"))
+ggplot(d, aes(charges)) + geom_histogram()  + scale_x_log10() + labs(title = "Rozkład zmiennej log(charges)", subtitle = "przedstawionej w formie wykładniczej co jest efektem prawoskośności w wykresie poprzednim") + theme(plot.subtitle=element_text(size=7, face="italic", color="black"))
+ggplot(d, aes(age)) + geom_histogram(binwidth = 3)+ labs(title = "Rozkład zmiennej age", subtitle = "rozklad jednostajny") + theme(plot.subtitle=element_text(size=10, face="italic", color="black"))
+# rozklad jednostajny
+ggplot(d, aes(bmi)) + geom_histogram() + labs(title = "Rozkład zmiennej bmi" , subtitle = " rozklad normalny") + theme(plot.subtitle=element_text(size=10, face="italic", color="black"))  # rozklad normalny
+```
+
+#_ Zależności między zmienną objaśnianą, a wieloma zmiennymi objaśniającymi_
+
+```{r}
+#d %>% 
+#group_by(sex) %>% 
+#skim(charges)
+
+
+
+favstats(charges ~ children, data = d) %>% kable()
+ggplot(d, aes(as.factor(children), charges)) + geom_boxplot(fill =c(2 : 7)) + scale_y_log10() + labs(title = "Wydatki na leczenie(charges) vs. ilość dzieci(children)") + theme(plot.title=element_text(size=10))
+
+favstats(charges ~ region, data = d) %>% kable()
+ggplot(d, aes(region, charges)) + geom_boxplot(fill =c(2:5)) + scale_y_log10() + labs(title = "Wydatki na leczenie(charges) vs. miejsce zamieszkania(region)") + theme(plot.title=element_text(size=10))
+ggplot(d, aes(charges, fill = region)) + geom_density(alpha = 0.5) + scale_x_log10() + labs(title = "Gęstość wydatków (charges) w miejscu zamieszkania(region)") + theme(plot.title=element_text(size=12))
+#favstats(charges ~ age, data = d) %>% kable()
+
+favstats(charges ~ sex, data = d) %>% kable()
+ggplot(d, aes(sex, charges)) + geom_boxplot(fill = c(2:3)) + scale_y_log10() + labs(title = "Wydatki na leczenie(charges) vs. płeć(sex)") + theme(plot.title=element_text(size=10))
+ggplot(d, aes(charges, fill = sex)) + geom_density(alpha = 0.5) + scale_x_log10() + labs(title = "Wykres gęstości wydatków (charges) w zalezności od płci(sex)") + theme(plot.title=element_text(size=12))
+
+favstats(charges ~ smoker, data = d) %>% kable()
+ggplot(d, aes(smoker, charges)) + geom_boxplot(fill = c(2:3)) + scale_y_log10() + labs(title = "Wydatki na leczenie(charges), a niepalący(smoker no) i palący(smoker yes)")+ theme(plot.title=element_text(size=8))
+ggplot(d, aes(charges, fill = smoker)) + geom_density(alpha = 0.5) + scale_x_log10() + labs(title = "Wydatki palących i niepalących")
+
+
+#ggplot(d, aes(bmi, sqrt(charges), col = age, shape = smoker)) + geom_point() + geom_vline(xintercept = 30)  +geom_smooth(method = "lm",col = "red")
+
+ggplot(d, aes(ifelse(bmi >= 30, "yes", "no"), charges)) + geom_boxplot(fill= c(2:3), outlier.colour = "red", outlier.shape = 1) + scale_y_log10() + labs(title = "Zależność między wydatkami na leczenie(charges), a podziałem bmi>=30", subtitle = "bmi powyżej 30 uważa się za otyłość") + theme(plot.title = element_text(size=9, color="black") ) + theme(plot.subtitle = element_text(size=9, face="italic", color="black") )
+#d %>% 
+#  filter(smoker == "yes") %>% 
+#  ggplot(aes(charges, fill = sex)) + geom_density(alpha = 0.5) + scale_x_log10()
+ggplot(d, aes(bmi, log10(charges), colour = age, shape = smoker)) + geom_point() + scale_y_log10()  + geom_vline(xintercept = 30) + geom_smooth(method = "lm", se = FALSE, col = "red")+ labs(title = "Wydatki na leczenie(charges) vs. bmi uwarunkowanym wiekiem oraz paleniem", subtitle = "Wyraźny podział wydatków palących i niepalących") + theme(plot.title = element_text(size=8, color="black")) + theme(plot.subtitle = element_text(size=8, face="italic", color="black"))
+
+ggplot(d, aes(age, charges, col = smoker, shape = smoker)) + geom_point(size = 2) + scale_y_log10() + geom_smooth(method = "lm",col = "black") + labs(title = "Zależność między wydatkami na leczenie(charges), wiekiem oraz paleniem") + theme(plot.title = element_text(size=7, color="black"))
+#ggplot(d, aes(age, (charges)^2, col = smoker, shape = sex)) + geom_point(size = 2)
+#ggplot(d, aes(age, sqrt(charges), col = sex, shape = smoker)) + geom_point(size = 2) +geom_smooth(method = "lm",col = "black")
+```
+```{r message=FALSE, warning=FALSE}
+charges.subset <- subset(d, select = c(charges,age, sex, bmi,region, children, smoker))
+pairs.panels(charges.subset)
+```
+
+```{r}
+# m1 <- lm(charges ~ ., d)
+# summary(m1)
+# res_m1 <- m1 %>% summary() %>% coef() %>% round(3) %>% as.data.frame() %>% kable()
+# res_m1
+#lm(charges ~ children, d) %>% summary()
+
+
+hist(log(d$charges))
+m2 <- lm(log(charges) ~ ., d)
+summary(m2) #summary(lm(log(charges) ~ ., d))
+res_m2 <- m2 %>% summary() %>% coef() %>% as.data.frame()
+res_m2[, 1] <- exp(res_m2[, 1])
+res_m2[, 2] <- exp(res_m2[, 2])
+kable(res_m2 %>% round(3))
+# Jesli palisz, logarytm (przy podstawie e) kosztow leczenie wzrasta srednio 4.73 razy (przy ustalonych pozostalych zmiennych).
+# (czyli o 373%)
+# Wraz ze wzrostem children o 1, log(charges) wzrasta 1.11 razy (czyli o 11%).
+# Jesli mieszkasz w region southwest, koszta leczenia "wzrastaja 0.88 razy" -- czyli maleja o 12%.
+```
+
+Jesli palisz, koszta leczenie wzrasta srednio 4.73 razy (przy ustalonych pozostalych zmiennych).
+Wraz ze wzrostem children o 1, wzrasta o 11%.
+Jesli mieszkasz w region southwest, koszta leczenia maleja o 12%.
+
+
+```{r include=FALSE, warning=FALSE, message=FALSE}
+#lm(log(charges) ~ . - region, d) %>% vif()
+# jesli VIF > 10, to jest problem ze wspolliniowoscia
+```
+
+
+```{r}
+vif(m2)
+# jesli GVIF^(1/(2*Df)) > sqrt(10), to jest problem ze wspolliniowoscia
+# bmi2 <- d$bmi + rnorm(nrow(d))
+# cor(bmi2, d$bmi)
+# lm(log(charges) ~ . - region + bmi2, d) %>% vif()
+```
+
+Nie ma problemu ze wspollniowoscia.
+```{r}
+library("lmtest")
+bptest(m2) #Breusch-Pagan Test
+#reszty są homoskedastyczne- stała wariancja
+```
+
+```{r}
+hist(m2$residuals)
+residualPlots(m2)
+qqPlot(m2)
+outlierTest(m2)#zmienna odstająca(obserwacja wpływowa)
+```
+Pierwszy wykres ogólnie sprawdza czy reszty mają rozkład normalny
+
+Przynajmniej wiek nalezy podnieść do kwadratu aby uwzględnić nieliniową zależność z wiekiem, chociaż zależność może być bardziej skomplikowana i nalężałoby podnieść do trzeciej.
+Trzeci wykres sprawdza założenie o braku zależności między resztami a każdą zmienną z modelu, a widać że jest ewidentna losowość powinna wahać się wokół zera.
+_może nic sie nie da zrobić. Ewidentnie zależności są bardziej skomplikowane niż zakłada ten model regresji. Wykres kwantylowy reszty powinny sie układać w linie. Ramka na końcu dotyczy danych(obserwacji) odstających czy wyrzucenie obserwacji istotnie zmieniłoby model_
+
+Bonferroni p pokazuje pozycje, które mogą mieć wpływ na model, ale wyniki nie są specjalnie odstające na tyle aby można założyć, że ich usunięci wyraźnie zmieni model.
+
+```{r}
+#Analiza normalności reszt w modelu m2
+shapiro.test(m2$residuals)
+```
+```{r}
+#test losowości reszt- test Ljung-Box
+Box.test(m2$residuals, type = "Ljung-Box")
+```
+
+Interakcje
+
+Dodawanie interakcji aby polepszyć model 
+_Dodanie interakcji dzięki funkcji "step()", aby sam sobie poszukał, które są istotne_
+
+
+```{r}
+#m3 <- lm(log(charges) ~ . + age:smoker, d) %>% step()
+#summary(m3)
+#residualPlots(m3)
+#qqPlot(m3)
+#outlierTest(m3)
+```
+# dla niepalaczy wspolczynnik przy age wynosi 0.04
+# dla palaczy wspolczynnik przy age wynosi 0.04-0.03=0.01
+_odejmujemy region w interakcji drugiego stopnia, ale region zostaje_
+```{r}
+m4 <- lm(log(charges) ~ (. - region)^2 + region, d) %>% step()
+summary(m4)
+residualPlots(m4)
+qqPlot(m4)
+outlierTest(m4)
+```
+
+```{r}
+vif(m4)
+#m5 <- lm(sqrt(charges) ~ (. - region)^2 + region, d) %>% step()
+#summary(m5)
+#residualPlots(m5)
+```
+```{r}
+#Analiza normalności reszt w modelu m2
+shapiro.test(m4$residuals)
+```
+```{r}
+#test losowości reszt- test Ljung-Box
+Box.test(m4$residuals, type = "Ljung-Box")
+```
+
+```{r include = FALSE}
+cor.test(d$charges, d$age, method= "spearman")
+```
+
+```{r include= FALSE,warning= FALSE, message= FALSE}
+#library("survival")
+#cox1 <- coxph(Surv(sqrt(charges)) ~ (. - region)^2 + region, data = d)
+#summary(cox1)
+#plot(survfit(cox1, conf.int = TRUE))
+```
+
+
+```{r include= FALSE,warning= FALSE, message= FALSE}
+#cox2 <- coxph(Surv(sqrt(charges)) ~ (age + smoker + bmi:smoker), data = d)
+#summary(cox2)
+```
+
+
+```{r include = FALSE, warning= FALSE, message= FALSE}
+#cox3 <- coxph(Surv(sqrt(charges)) ~ (bmi + smoker + bmi:smoker), data = d)
+#summary(cox3)
+#plot(survfit(cox3, conf.int = TRUE))
+```
+```{r}
+bptest(m4) #Breusch-Pagan Test
+#reszty są homoskedastyczne- stała wariancja
+```
+```{r include= FALSE, warning= FALSE, message= FALSE}
+#autokorelacja <- durbinWatsonTest(m5)
+#autokorelacja
+#HO autokorelacja
+```
+```{r}
+
+#Tworzymy model w oparciu o metodę Hellwiga (wykorzystamy funkcję Hellwig z poprzedniego zestawu)
+
+
+Hellwig <- function(LiczbaZm, ZbiorZm, RodzajKor) {
+  
+  
+  require(gtools)
+  
+  Zmienne_opt <- array();
+  
+  
+  
+  chwilowe_H <- 0;
+  
+  maxH <- 0;
+  
+  
+  
+  Macierz_kor <- cor(ZbiorZm, method=RodzajKor);
+  
+  
+  
+  Lista_pelna <- list();
+  
+  
+  
+  for( i in 1: (LiczbaZm-1) ) {
+    
+    
+    
+    Lista_pelna[[i]] <- combinations( (LiczbaZm-1), i, 2:LiczbaZm, repeats=FALSE);
+    
+    
+    
+  }
+  
+  
+  
+  for(Liczba_el_w_komb in 1:length(Lista_pelna)) {
+    
+    
+    
+    H<-array();
+    
+    
+    
+    for( Numer_komb in 1: length(Lista_pelna[[ Liczba_el_w_komb ]][, 1]) ) {
+      
+      
+      
+      h<-array();
+      
+      
+      
+      for( Index_zm_w_komb in 1:length( Lista_pelna[[ Liczba_el_w_komb ]][ Numer_komb, ])) {
+        
+        
+        
+        Zmienna <- Lista_pelna[[ Liczba_el_w_komb ]][ Numer_komb, Index_zm_w_komb ];
+        
+        
+        
+        RXY <- ( Macierz_kor[ Zmienna, 1] )^2;
+        
+        
+        
+        Zmienne <- Lista_pelna[[ Liczba_el_w_komb ]][ Numer_komb, ];
+        
+        
+        
+        Suma_kor_mianownik <- 0;
+        
+        
+        
+        for(k in Zmienne) {
+          
+          
+          
+          Suma_kor_mianownik <- Suma_kor_mianownik + abs( Macierz_kor[k, Zmienna] );
+          
+        }
+        
+        
+        
+        h[ Index_zm_w_komb ] <- RXY / Suma_kor_mianownik;
+        
+      }
+      
+      
+      
+      chwilowe_H <- sum(h);
+      
+      
+      
+      if(chwilowe_H > maxH) {
+        
+        maxH = chwilowe_H;
+        
+        Zmienne_opt <- Zmienne-1;
+        
+      }
+      
+    }
+    
+  }
+  
+  
+  
+  cat("Koszta optymalne wynoszą",maxH,"\n")
+  
+  for(d in 1:length(Zmienne_opt)) {
+    cat("Należy wybrać zmienną X o indeksie",Zmienne_opt[d],"\n")
+  }
+  
+  
+  
+}
+
+
+
+
+
+matrix <- model.matrix(charges ~ ., d)
+matrix <- as.data.frame(matrix[, -1])
+Dane<-data.frame(charges = log(d$charges), matrix)
+
+
+Hellwig(ncol(Dane), Dane, "pearson")
+
+
+
+
+
+# Metoda Hellwiga sugeruje wybór zmiennych o numerach 1,4,5
+# czyli age, children, smoker
+
+xnam0<-colnames(d)[c(1,4,5)]
+formula0 <- as.formula(paste("log(charges) ~ ", paste(xnam0, collapse= "+")))
+formula0
+
+#Tworzymy model dla części zmiennych
+
+restrykcja<-lm(formula0, d)
+
+
+
+#Ocena dopasowania
+
+summary(restrykcja)
+
+
+
+# Wykres rozrzutu
+
+reszty<-restrykcja$residuals
+
+
+
+plot(log(d$charges),reszty)
+
+```
+
+```{r}
+
+```
+
+```{r}
+library("coin")
+spearman_test(charges ~ bmi, d)
+```
+
